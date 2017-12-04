@@ -29,7 +29,7 @@
 /**
  * Read Scrips and setup DS. Start Timers and start AB thread
  */
-Worker::Worker():
+Worker::Worker( const std::string &settings_file_name ):
     is_rtd_started(false),
     rtd_inactive_count(0),
 	amibroker(0),
@@ -43,7 +43,7 @@ Worker::Worker():
 
     today_date       = Util::getTime("%Y%m%d");							  // Get todays date - yyyymmdd
 
-    settings.loadSettings();
+    settings.loadSettings( settings_file_name );
 
     rtd_client = new RTDClient( settings.rtd_server_prog_id );
     current    = new ScripState[ settings.no_of_scrips ] ;
@@ -170,7 +170,7 @@ void Worker::processRTDData( const std::map<long,CComVariant>* data ){
 
         switch( field_id ){                        
             case LTP :{
-                double      ltp      = Util::getDouble( topic_value ) * settings.scrips_array[script_id].ltp_multiplier;                
+                double      ltp      = Util::getDouble( topic_value ) * settings.scrips_array[script_id].ltp_multiplier;
                 ScripState *_current = & current[script_id];
 
                 _current->ltp = ltp;
@@ -180,7 +180,7 @@ void Worker::processRTDData( const std::map<long,CComVariant>* data ){
                 break ;
             }
             case VOLUME_TODAY :{  
-                long long vol_today          = Util::getLong  ( topic_value );
+                long long vol_today          = Util::getLong  ( topic_value ) * settings.scrips_array[script_id].vol_multiplier;
                 current[script_id].vol_today = vol_today;
 
                 if( vol_today !=0  &&  previous[script_id].vol_today == 0  ){
@@ -262,9 +262,12 @@ void Worker::amibrokerPoller(){
                 continue;                                                  //   skip to avoid overwrite with same timestamp.
             }                                                              // This can happen if we have more than 1 update in a second 
                                                                            //   and poller took data in between.
-            if( bar_ltt == "15:29:59" && Util::getTime("%H") != "15"  ){   // Skip 15:29:59 if current hour is not 15 
-                _current->reset();                                         //   to avoid yesterdays quote on open in NOW.
-                _prev->reset();                                            // Reset Bars to avoid yesterday data in open bar 
+
+			std::vector<std::string>  split;							   // Skip 15:29:XX if current hour is not 15 	
+			Util::splitString( bar_ltt, ':', split ) ;					   //   to avoid yesterdays quote on open in NOW.
+            if( split[0] == "15" && split[1] == "29" && Util::getTime("%H") != "15"  ){   
+                _current->reset();										   // Reset Bars to avoid yesterday data in open bar 
+                _prev->reset();                                            
                 continue;                                                  
             }
             // Skip quotes outside market hours

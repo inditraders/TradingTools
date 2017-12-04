@@ -19,6 +19,7 @@ class TradeClass{
 	
 	scrip			 := ""
 	direction		 := ""													// B/S
+	index			 := -1													// tab index
 	
 	newEntryOrder	 := -1
 	stopOrder  		 := -1
@@ -31,15 +32,18 @@ class TradeClass{
 	executedEntryOrderList := []											// List of executed entry/add orders
 																			// entryOrder contains details of current unexecuted order shown in GUI and _entryOrderList has all of executed orders
 	
+	InitialStopDistance  := 0	
+	InitialEntry 		 := 0
+	
 	
 	
 	/*	open new Trade by creating Entry/Stop/Target orders	
 	*/
 	create( inScrip, entryOrderType, stopOrderType, direction, qty, prodType, entryPrice, stopPrice, targetPrice, targetQty ){
-	
-		if ( this.positionSize == 0 && !this._checkOpenOrderEmpty() )
-			return
 		
+		global contextObj
+		
+		this.index  	:= contextObj.getCurrentIndex()
 		this.scrip  	:= inScrip
 		this.direction	:= direction
 		
@@ -76,12 +80,14 @@ class TradeClass{
 
 		this.save()
 		updateStatus()
+		contextObj.refreshQtyPercFromContext( this.index )						// Refresh Target Qty % keeping actual qty unchanged
 	}
 	
 	/*	Update Trade - Update Entry/Stop/Target orders			
 	*/
 	update( inScrip, entryOrderType, stopOrderType, qty, prodType, entryPrice, stopPrice, targetPrice, targetQty  ){
-				
+		global contextObj
+		
 		if( this.isNewEntryLinked() && entryPrice != "" ){		
 			
 			orderDirection  := this.newEntryOrder.getGUIDirection()				// same direction as linked order			
@@ -96,6 +102,7 @@ class TradeClass{
 
 		this.save()	
 		updateStatus()
+		contextObj.refreshTargetQtyPercFromContext( this.index )				// Refresh Target Qty % keeping actual qty unchanged
 	}
 		
 	/*	Called by Tracker Thread - orderStatusTracker()
@@ -104,7 +111,8 @@ class TradeClass{
 		Handle Stop update after Target partial fill
 	*/
 	trackerCallback(){
-
+		global contextObj
+		
 		if( this.newEntryOrder.isClosed() ){									// Entry Finished
 
 			if( this.isEntrySuccessful()  ){									// Entry Successful - Add Entry Order to Position by inserting in executedEntryOrderList
@@ -118,6 +126,7 @@ class TradeClass{
 
 				this.target.onEntrySuccessful( this.stopOrder, this.positionSize )
 																				// If Entry successful, update target order - Increase target order size
+				contextObj.clearQtyFromContext( this.index  )					// Reset Qty to 0 after Entry/Add
 			}
 			else{																// Entry Order Failed
 				if( this.isStopPending  ){
@@ -128,7 +137,7 @@ class TradeClass{
 					if( this.isEntryOrderExecuted() ){							// LIMIT/Market Order Failed - Reduce Stop Qty
 						this._updateStopSize()									// Reset stop size to current position size, without entryOrder
 						this.stopOrder.update()
-						MsgBox, 262144,, Entry/Add Order Failed. Stop order has been reverted
+						MsgBox, 262144,, Add Order Failed. Stop order has been reverted
 					}
 					else{														// Position empty, cancel stop order
 						if( this.stopOrder.cancel() )
@@ -138,7 +147,8 @@ class TradeClass{
 					}
 				}
 			}
-
+			
+			contextObj.refreshQtyPercFromContext( this.index )					// Refresh Target Qty % keeping actual qty unchanged
 			this.newEntryOrder := -1 											// Unlink Entry Order to allow adds
 			this.save()
 		}
@@ -154,7 +164,7 @@ class TradeClass{
 			this._updateStopSize()												// Update Stop size. If position closed, stop size will be 0 which will cancel the order in update()
 			this.stopOrder.update()
 			
-			this.target.onTargetClose()											// Notify Open target order closure
+			this.target.onTargetClose( this.index )								// Notify Open target order closure
 			this.save()
 
 			if(this.positionSize <= 0 ){										// Position closed, cancel all open orders
@@ -162,6 +172,10 @@ class TradeClass{
 				return
 			}
 		}
+		// TODO 
+		// Target update price/qty sometimes triggers stop order update with incorrect size
+		// Below code causes it
+		/*
 		else{																	// If Target LIMIT order is filled partially, update stop order
 			filledQty := this.target.isPartiallyFilled()
 			if( filledQty > 0  ){
@@ -170,19 +184,21 @@ class TradeClass{
 				this.stopOrder.update()
 			}
 		}
+		*/
 	}
 
 	/* Close orders if open and unlink
 	*/
 	onTradeClose(){																// OCO Stop, Target Order
+	
 		entry  := this.isNewEntryLinked() ? this.newEntryOrder.cancel() : true	// If position closed, then cancel Add order if open
 		stop   := this.stopOrder.cancel()
 		target := this.isTargetLinked()   ? this.target.cancel() : true
 		
 		if( !entry || !stop || !target )
-			MsgBox, 262144,, Trade Closed - OCO Failed
+			MsgBox, 262144,, % "Trade " . this.index . " Closed - OCO Failed"
 		else
-			MsgBox, 262144,, Trade Closed - Verify
+			MsgBox, 262144,, % "Trade " . this.index . " Closed - Verify"
 		this.unlinkOrders()														// Unlink After close
 	}
 	
@@ -227,13 +243,22 @@ class TradeClass{
 		
 		this.save()
 		updateStatus()
+		
+		toggleStatusTracker( "on" )											// Turn back on, if no more trades left it will turn off 
 	}
-			
+
+	saveInitialStopDistance( risk, entry  ){
+		this.InitialStopDistance  := risk		
+		this.InitialEntry 		  := entry
+	}
+	
 	/*	Save linked order nos to ini
 		Used on startup to link to open orders on last exit
-		Format:		Alias:EntryOpenOrderNo:StopOrderNo,isPending,PendingPrice:ExecutedEntryList:TargetOrderNo,TargetPrice:ExecutedTargetList
+		Format:		Alias:EntryOpenOrderNo:StopOrderNo,isPending,PendingPrice:ExecutedEntryList:TargetOrderNo,TargetPrice:ExecutedTargetList:InitialStopDistance,InitialEntry
 	*/
 	save(){
+		global contextObj
+		
 		scripAlias	:= this.scrip.alias
 		entryOrder	:= this.newEntryOrder.getOrderDetails().nowOrderNo
 		stopString	:= this.stopOrder.getOrderDetails().nowOrderNo . ( "," . this.isStopPending . "," . this.stopOrder.getInput().trigger )
@@ -246,37 +271,57 @@ class TradeClass{
 		targetString 		 := this.target.getOpenOrder().getOrderDetails().nowOrderNo	. "," .  this.target.getPrice() . "," . this.target.getGUIQty()
 		executedTargetString := this.target.getExecutedOrderList()
 		
-		savestring  := scripAlias . ":" . entryOrder . ":" . stopstring . ":" . executedEntryString . ":" . targetString . ":" . executedTargetString
-
-		saveOrders( savestring )			
+		InitialStopDistanceString := this.InitialStopDistance . "," . this.InitialEntry
+		
+		savestring  := scripAlias . ":" . entryOrder . ":" . stopstring . ":" . executedEntryString . ":" . targetString . ":" . executedTargetString . ":" . InitialStopDistanceString
+		
+		if( this.index == -1 )
+			MsgBox, 262144,, Trade index not saved					// assert(), should not happen
+		
+		saveOrders( this.index, savestring )
 	}
 	
-	/* Format:		Alias:EntryOpenOrderNo:StopOrderNo,isPending,PendingPrice:ExecutedEntryList:TargetOrderNo,TargetPrice:ExecutedTargetList
+	/* Format:		Alias:EntryOpenOrderNo:StopOrderNo,isPending,PendingPrice:ExecutedEntryList:TargetOrderNo,TargetPrice:ExecutedTargetList:InitialStopDistance,InitialEntry
 	*/
 	loadOrders(){
-		global SavedOrders, orderbookObj
-				
+		global orderbookObj, contextObj, SavedOrders1, SavedOrders2, SavedOrders3
+		
+		index := contextObj.getCurrentIndex()
+		
 		orderbookObj.read()
 		
-		fields 					 := StrSplit( SavedOrders , ":") 
+		fields 					 := StrSplit( SavedOrders%index% , ":") 
 		scripAlias				 := fields[1]
 		entryOrderID			 := fields[2]
 		stopstring   			 := fields[3]
 		executedEntryOrderIDList := fields[4]
 		targetString 			 := fields[5]
 		executedTargetOrderList  := fields[6]
+		InitialStopDistanceString := fields[7]
 		
 		fields 	     := StrSplit( stopstring , ",")
 		stopOrderID  := fields[1]
 		isPending    := fields[2]
 		pendingPrice := fields[3]
 		
+		if( (entryOrderID == 0 || entryOrderID == "")  &&  (stopOrderID == 0 || stopOrderID == "")  )
+			return false
+		
 		fields		  := StrSplit( targetString , ",")
 		targetOrderID := fields[1]
 		_targetPrice  := fields[2]
 		_targetQty	  := fields[3]
 				
-		return this.linkOrders( true, scripAlias, entryOrderID, executedEntryOrderIDList, stopOrderID, isPending, pendingPrice, targetOrderID, _targetPrice, _targetQty, executedTargetOrderList  )		
+		if( this.linkOrders( true, scripAlias, entryOrderID, executedEntryOrderIDList, stopOrderID, isPending, pendingPrice, targetOrderID, _targetPrice, _targetQty, executedTargetOrderList  ) ){
+			
+			fields := StrSplit( InitialStopDistanceString , ",")
+			this.InitialStopDistance  := fields[1]			
+			this.InitialEntry 		  := fields[2]
+			
+			return true
+		}
+		
+		return false
 	}
 
 	/*	Link with Input Order
@@ -284,7 +329,7 @@ class TradeClass{
 		Does not call this.save() - should be called by caller. loadOrders()->linkOrders() does not need to save
 	*/
 	linkOrders( isSilent, scripAlias, entryOrderID, executedEntryOrderIDList, stopOrderID, isPending, pendingPrice, targetOrderID, targetPrice, targetQty, executedTargetOrderList ){
-		global orderbookObj, STOP_ORDER_TYPE
+		global contextObj, orderbookObj, STOP_ORDER_TYPE
 		
 		orderbookObj.read()
 		entryOrderDetails   	:= orderbookObj.getOrderDetails( entryOrderID )
@@ -307,7 +352,7 @@ class TradeClass{
 		entryOrderListObj    := []
 		targetOrderListObj   := []
 		openTargetSize		 := openTargetOrderExists ? targetOrderDetails.totalQty : 0
-		openTargetFilledSize := openTargetOrderExists ? targetOrderDetails.totalQty - targetOrderDetails.pendingQty : 0
+		openTargetFilledSize := openTargetOrderExists ? targetOrderDetails.tradedQty : 0
 
 		if( executedEntryOrderIDList != ""){										// Fetch Executed Entry Orders
 																					// Stop will always exits if atleast 1 entry order has been filled
@@ -316,7 +361,7 @@ class TradeClass{
 				return false
 			else
 				positionSize += size
-		}
+		}		
 
 		if( executedTargetOrderList != ""){											// Fetch Executed Target Orders		
 			size := this._loadExecutedOrders( isSilent, executedTargetOrderList, targetOrderListObj, stopOrderDetails.tradingSymbol  )
@@ -376,6 +421,8 @@ class TradeClass{
 
 		loadScrip( scripAlias )
 		
+		this.index := contextObj.getCurrentIndex()
+		
 		this.newEntryOrder := new OrderClass
 		this.newEntryOrder.loadOrderFromOrderbook( entryOrderDetails )
 		this.executedEntryOrderList  := entryOrderListObj
@@ -390,11 +437,11 @@ class TradeClass{
 		this.positionSize := positionSize
 
 		if( !newEntryOrderExists ){													// No New Order => We may have Executed Entry Orders 
-			o := this._getLastExecutedInputOrder()									// Use the latest Executed Order and copy Input to prepare for future Adds
-			if( IsObject(o) ){
-				o.loadOrderFromOrderbook( 0 )										// Load input from Orderbook, passing 0 
+			o := this._getLastExecutedInputOrder()										// Use the latest Executed Order and copy Input to prepare for future Adds
+			if( IsObject(o) ){															// Keep qty as 0, it should be set manually and not taken from last entry/add order 
+				o.loadOrderFromOrderbook( 0 )										// Load input from Orderbook, passing 0 to avoid resetting orderDetails
 				i := o.getInput()
-				this.newEntryOrder.setOrderInput( i.orderType, i.direction, i.qty, i.price, i.trigger, i.prodType, i.scrip )
+				this.newEntryOrder.setOrderInput( i.orderType, i.direction, 0, i.price, i.trigger, i.prodType, i.scrip )
 			}
 		}
 		if( isPending ){
@@ -419,7 +466,8 @@ class TradeClass{
 	/*	Reset All Order pointers
 	*/
 	unlinkOrders(){
-		
+		global contextObj
+
 		this.newEntryOrder	:= -1												// Current Entry/Add order - Not yet executed
 		this.stopOrder 		:= -1												// Single stop order covering all executed orders + open entryOrder
 		this.target.unlink()
@@ -430,17 +478,14 @@ class TradeClass{
 		this.executedEntryOrderList := []										// List of successfully executed Orders		
 		
 		this.save()
-		
-		setDefaultQty()															// Reset Qty in GUI to Default Size
-		setDefaultEntryOrderType()												// Reset to default order type
+
+		contextObj.resetContext( this.index  )
 	}
 	
 	/* Reload order details from orderbook
+		call orderbookObj.read() before reload()
 	*/
-	reload(){
-		global orderbookObj
-		
-		orderbookObj.read()
+	reload(){		
 		if( this.isNewEntryLinked() )
 			this.newEntryOrder.reloadDetails()
 		if( this.isStopLinked() )
@@ -450,13 +495,14 @@ class TradeClass{
 	}
 
 
+	
 
 	/*	New Entry Order Open ? - Returns true if newEntryOrder is an object and is linked with an order in orderbook
 	*/
 	isNewEntryLinked(){		
 		return IsObject( this.newEntryOrder )  && IsObject(this.newEntryOrder.getOrderDetails()) 
 	}
-	
+
 	/*	Returns true if atleast one Entry order has been executed - ie we have open position
 	*/
 	isEntryOrderExecuted(){
@@ -619,23 +665,10 @@ class TradeClass{
 		return ( entryOrderType == ORDER_TYPE_GUI_SL_LIMIT || entryOrderType == ORDER_TYPE_GUI_SL_MARKET )
 	}
 
-	/*	If Open orders exist, Notify User. Used to warn before creating orders
-	*/
-	_checkOpenOrderEmpty(){
-		global orderbookObj
-		
-		if( orderbookObj.doOpenOrdersExist() ){									// Entry
-			MsgBox, % 262144+4,, Some Open Orders already exist . Continue?
-			IfMsgBox No
-				return false
-		}
-		return true
-	}
-
 	/* Go through orders in input csv
 	   Check if trading symbol matches against Input
 	   Setup OrderClass and push to input List	
-	   Returns totalQty of Executed Orders if successful, else returns -1
+	   Returns totalQty of Executed Orders if successful, else returns -1	   
 	*/
 	_loadExecutedOrders( isSilent, inputOrderCsv, outputOrderList, tradingSymbol  ){
 		global orderbookObj

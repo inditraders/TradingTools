@@ -24,7 +24,9 @@ loadSettings(){
     config      := "config/OrderMan.ini"
     config_gen  := "config/save.ini"
 
-    IniRead, SavedOrders,       %config_gen%, OrderMan, SavedOrders
+    IniRead, SavedOrders1,       %config_gen%, OrderMan, SavedOrders1
+    IniRead, SavedOrders2,       %config_gen%, OrderMan, SavedOrders2
+    IniRead, SavedOrders3,       %config_gen%, OrderMan, SavedOrders3
     IniRead, LastWindowPosition,%config_gen%, OrderMan, LastWindowPosition
 
     IniRead, ScripList,         %config%, OrderMan, ScripList
@@ -33,6 +35,10 @@ loadSettings(){
     IniRead, HKTargetPrice,   	%config%, OrderMan, HKTargetPrice
     IniRead, TITLE_NOW,         %config%, OrderMan, WindowTitle
     IniRead, TickPath,          %config%, OrderMan, TickPath
+
+    IniRead, Capital,           %config%, OrderMan, Capital
+    IniRead, TradeRisk,         %config%, OrderMan, TradeRisk
+    IniRead, DefaultTargetSize, %config%, OrderMan, DefaultTargetSize    
     
     IniRead, value,     %config%, OrderMan, AlertsEnabled
     AlertsEnabled := value=="true"
@@ -55,13 +61,24 @@ loadSettings(){
     STOP_ORDER_TYPE := DefaultStopOrderType                                     // Default Stop Order Type
 }
 
+isValidScrip( alias ){
+   ini := "config/scrips/" . alias . ".ini"
+    
+   IniRead, value,	%ini%, OrderMan, Scrip, NotFound
+    
+   if( value == "NotFound"){
+       return false
+   }
+   return true
+}
+
 /*
   Loads Scrip details from ini.
   Input alias = ini file name
 */
 loadScrip( alias ){
     
-    local value
+    local value, ini
     
     ini := "config/scrips/" . alias . ".ini"
     
@@ -75,15 +92,9 @@ loadScrip( alias ){
     local fields := StrSplit( value , ",")
     selectedScrip := new ScripClass
     selectedScrip.setInput( fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], alias )  
-    
-    IniRead, DefaultQty, %ini%, OrderMan, Qty
-    Qty :=  DefaultQty
-    
-    IniRead, ProdType, 	        %ini%, OrderMan, ProdType
-    IniRead, MaxStopSize,   	%ini%, OrderMan, MaxStopSize
-    IniRead, MaxSlippage,       %ini%, OrderMan, MaxSlippage
-    IniRead, DefaultStopSize,	%ini%, OrderMan, DefaultStopSize
-    IniRead, DefaultTargetSize,	%ini%, OrderMan, DefaultTargetSize
+
+    IniRead, ProdType, 	        %ini%, OrderMan, ProdType    
+    IniRead, MaxSlippage,       %ini%, OrderMan, MaxSlippage        
     IniRead, MinTargetStopDiff,	%ini%, OrderMan, MinTargetStopDiff
     IniRead, TickSize,      	%ini%, OrderMan, TickSize
 }
@@ -101,9 +112,10 @@ saveLastPosition(){
 
 /*
   Save orders. Used to load open trade on startup
+    Trades are saved under SavedOrders1, SavedOrders2 & SavedOrders3
 */
-saveOrders( savestring ){
-    global config_gen
-    IniWrite, %savestring%, %config_gen%, OrderMan, SavedOrders
+saveOrders( index, savestring ){
+    global config_gen    
+    IniWrite, %savestring%, %config_gen%, OrderMan, % "SavedOrders" . index
 }
 

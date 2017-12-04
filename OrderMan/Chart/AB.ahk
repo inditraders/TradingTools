@@ -16,7 +16,7 @@
 */
 
 installHotkeys(){
-	global HKEntryPrice, HKStopPrice, HKTargetPrice	
+	global HKEntryPrice, HKStopPrice, HKTargetPrice, scripControl
 
 	if( HKEntryPrice != "" && HKEntryPrice != "ERROR")		
 		installHotKey( HKEntryPrice, "getEntryPriceFromAB" )
@@ -26,6 +26,8 @@ installHotkeys(){
 	
 	if( HKTargetPrice != "" && HKTargetPrice != "ERROR")
 		installHotKey( HKTargetPrice, "getTargetPriceFromAB" )
+	
+	scripControl := "RichEdit20A3"			// Symbol control with one Analysis window open
 }
 
 installHotKey( key, function ){
@@ -40,16 +42,29 @@ installHotKey( key, function ){
 }
 
 setScrip(){
+	global contextObj
+	
 	scrip := getScripFromAB()
-	if( scrip != "" )
-		setSelectedScrip( scrip )
+	
+	if( scrip == "" )
+		return false
+	
+	contextObj.switchContextByScrip(scrip)								// If a trade already has this scrip, switch to it
+	
+	if( isScripChangeBlocked( scrip) )
+		return false
+
+	setSelectedScrip( scrip ) 
+	return true
 }
 
 getEntryPriceFromAB(){
 	global EntryPriceActual, StopPrice, isABPick
 	
-	setScrip()
-	price := getPriceFromAB()
+	if( !setScrip() )													// For trades with open orders, Only update prices if scrip matches
+		return
+	
+	price := getPriceFromAB()											// Get price 1st to avoid delay, else mouse movement can cause wrong price to be picked up
 
 	if( price > 0 ){		
 		EntryPriceActual := price
@@ -62,9 +77,11 @@ getEntryPriceFromAB(){
 getStopPriceFromAB(){
 	global EntryPrice, StopPriceActual, isABPick
 	
-	setScrip()
+	if( !setScrip() )														// For trades with open orders, Only update prices if scrip matches
+		return
+	
 	price := getPriceFromAB()
-
+	
 	if( price > 0 ){		
 		StopPriceActual := price
 		_guessDirection( EntryPrice, price )
@@ -74,10 +91,12 @@ getStopPriceFromAB(){
 }
 
 getTargetPriceFromAB(){
-
-	setScrip()
-	price := getPriceFromAB()
 	
+	if( !setScrip() )														// For trades with open orders, Only update prices if scrip matches
+		return
+	
+	price := getPriceFromAB()
+
 	if( price > 0 ){		
 		setTargetPrice( UtilClass.roundToTickSize(price) )
 	}
@@ -125,20 +144,52 @@ _shortPriceAdjust(){
 	setStopPrice(   UtilClass.ceilToTickSize( StopPriceActual),   StopPriceActual )
 }
 
+
+
+
 /* Get scrip name from Ticker ToolBar
 */
 getScripFromAB(){
-
+	global scripControl
+	
 	IfWinExist, ahk_class AmiBrokerMainFrameClass
 	{	
-		ControlGetText, scrip, RichEdit20A1, ahk_class AmiBrokerMainFrameClass
-		return scrip
+		try{
+			if( scripControl != "" ){			
+				ControlGetText, scrip, %scripControl%, ahk_class AmiBrokerMainFrameClass
+				if( isValidScrip(scrip) ){
+					return scrip
+				}
+			}
+		}
+		catch ex{				// Control does not exist
+			scripControl := ""
+		}
+		
+		Loop, 20{															// Find Symbol Control
+			try{
+				controlName := "RichEdit20A" . A_Index
+				ControlGetText, scrip, %controlName%, ahk_class AmiBrokerMainFrameClass
+
+				if( isValidScrip(scrip) ){
+					scripControl := controlName
+					return scrip
+				}
+				else
+					continue		// Found Control can be Symbol dropdown or dropdowns from AA etc
+			} catch ex{				// Control does not exist
+				continue
+			}
+		}	
 	}
+	
+	MsgBox, Could not select Scrip from AB
+	
 	return ""
 }
 
-/*
-	Get price from line under cursor if found, else get from tooltip text
+/*	Get price from X-Y Labels else from line under cursor if found 
+	// Else get from tooltip text
 */
 getPriceFromAB(){
 
@@ -158,9 +209,8 @@ getPriceFromAB(){
 		return -1
 }
 
-/*
-	If Price/Y Axis Tooltip is enabled - pick price from it
-	This is fastest way to pick price
+/*	If Price/Y Axis Tooltip is enabled - pick price from it
+	This is fastest way to pick price but can be unreliable if cursor is not kept stable
 */
 getPriceAtCursor(){
 	
@@ -175,13 +225,33 @@ getPriceAtCursor(){
 	return ""
 }
 
-/*
-	Selects line and opens properties. Price copied from start price
-*/
 getPriceFromLine(){
+	global contextObj
+	
+	price := _getPriceFromLine()
+	
+	if( price == -1 && contextObj.getCurrentTrade().positionSize == 0 ){		// Only for create order, create TL if not found
+		
+		Send {Control down}t{Control up}										// Create TL - Custom shortcut
+		MouseMove, -20, 0,, R
+		Click 1	
+		MouseMove, 40, 0, 25, R
+		Click 1	
+		MouseMove, -20, 0,, R
+		
+		price := _getPriceFromLine()
+	}
+
+	return price
+}
+
+/*  Selects line and opens properties. Price copied from start price
+*/
+_getPriceFromLine(){
 	
 	Click 1																// Open trendline / HL properties. Click to Select + Alt-Enter
-	Send {Alt down}{Enter}{Alt up}	
+	//Send {Alt down}{Enter}{Alt up}										// alt-Enter conflicts with AA window. Use Custom SK instead	
+	Send {Alt down}g{Alt up}												// Shortcut Customize->Keyboard->Edit->Properties 
 	
 	Loop, 8{															// Try to hide window as soon as possible. WinWait seems to take too long
 		Sleep 25
@@ -203,8 +273,7 @@ getPriceFromLine(){
 	return -1
 }
 
-/*
-	If View > X-Y Labels set to Off - Pick price from tooltip at cursor
+/*	If View > X-Y Labels set to Off - Pick price from tooltip at cursor
 	Tries to trigger tooltip in Amibroker and copies price using Value property
 	Tooltip is Triggered by moving right slowly. This takes little extra time.
 	Tooltip text row format is assumed to be either "Value = 7747.650"(cursor over empty space) or "Begin:     09-09-2015 09:44:59, Value: 7785.28" ( cursor over line)
@@ -247,3 +316,4 @@ getPriceAtCursorTooltip(){
 
 	return ""
 }
+

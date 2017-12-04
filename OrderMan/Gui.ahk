@@ -24,10 +24,17 @@ initGUI(){
 	ORDER_TYPE_GUI_SL_LIMIT	  := "SL"
 	ORDER_TYPE_GUI_SL_MARKET  := "SLM"
 	SelectedScripText 		  := ""													// To avoid uninitialized error
+	
+	InitialStopDistance		  := 0
+	InitialEntry			  := 0
+	TargetQty				  := 0 
+	
+	isButtonTrigger		  	  := false	
+	PriceStatus				  := ""	
 }
 
 createGUI(){
-	global Qty, TargetQty, EntryPrice, StopPrice, TargetPrice, Direction, CurrentResult, TargetResult, BtnOrder, BtnUpdate, BtnLink, BtnUnlink, BtnCancel, EntryStatus, StopStatus, TargetStatus, LastWindowPosition, EntryOrderType, EntryUpDown, StopUpDown, TargetUpDown, EntryText, AddText, BtnAdd, SelectedScripText, ScripList, PriceStatus
+	global Qty, QtyPerc, TargetQtyPerc, EntryPrice, StopPrice, TargetPrice, Direction, CurrentResult, TargetResult, BtnOrder, BtnUpdate, BtnLink, BtnUnlink, BtnCancel, EntryStatus, StopStatus, TargetStatus, LastWindowPosition, EntryOrderType, EntryUpDown, StopUpDown, TargetUpDown, EntryText, AddText, BtnAdd, SelectedScripText, ScripList, PriceStatus, Button1, Button2, Button3
 	
 	SetFormat, FloatFast, 0.2
 
@@ -38,7 +45,10 @@ createGUI(){
 // Column 1
 	Gui, 1:Add, DropDownList, vSelectedScripText gonScripChange w100 Choose1, %ScripList%	
 // row 1
-	Gui, 1:Add, Text, vPriceStatus w120 x+m
+	Gui, 1:Add, Button, vButton1 gcontextSwitch1 x+m, 1
+	Gui, 1:Add, Button, vButton2 gcontextSwitch2 x+m, 2
+	Gui, 1:Add, Button, vButton3 gcontextSwitch3 x+m, 3
+	Gui, 1:Add, Text, vPriceStatus w125 x+m	
 
 // Column 1 
 	Gui, 1:Add, ListBox, vDirection gonDirectionChange h30 w20 xm Choose1, B|S		// xm - start from first column ( x coordinate = default margin )
@@ -51,9 +61,9 @@ createGUI(){
 	Gui, 1:Add, Text, gTargetClick, Target
 
 // Column 3	
-	Gui, 1:Add, Edit, vEntryPrice  w55    gonEntryPriceChange ym+25 x+m
-	Gui, 1:Add, Edit, vStopPrice   w55    gonStopPriceChange
-	Gui, 1:Add, Edit, vTargetPrice w55    gupdateCurrentResult
+	Gui, 1:Add, Edit, vEntryPrice  w55 ReadOnly   gonEntryPriceChange ym+25 x+m 
+	Gui, 1:Add, Edit, vStopPrice   w55 ReadOnly   gonStopPriceChange
+	Gui, 1:Add, Edit, vTargetPrice w55 ReadOnly   gupdateCurrentResult
 		
 	Gui, 1:Add, Button, gonNew vBtnOrder xp-35 y+m, New								// New or Update
 	Gui, 1:Add, Button, gonUpdate vBtnUpdate  xp+0 yp+0, Update	
@@ -66,18 +76,19 @@ createGUI(){
 	Gui, 1:Add, UpDown, vStopUpDown   gOnStopUpDown    Range0-1 -16 hp
 	Gui, 1:Add, UpDown, vTargetUpDown gOnTargetUpDown  Range0-1 -16 hp
 
-// Column 5
-	Gui, 1:Add, Edit, vQty w30 ym+25 x+m
-	Gui, 1:Add, Edit, vTargetQty w30  y+32
+// Column 5	 
+	Gui, 1:Add, Edit, vEntryRiskPerc gOnEntrySizeChange w25 ym+25 x+m				// Entry/Add Qty is always shown as percentage of Risk per trade
+	Gui, 1:Add, Edit, vTargetQtyPerc gOnTargetQtyPercChange w25 y+32 Number			// Target size as ratio of Initial Trade Size
 	Gui, 1:Add, Button, gonCancel vBtnCancel y+m, Cancel		 					// Add or Cancel button	
 	Gui, 1:Add, Button, gonAdd vBtnAdd xp+0 yp+0, Add
 
-// Column 6
-	Gui, 1:Add, Text, vCurrentResult  w38 ym+53 x+m
-	Gui, 1:Add, Text, vTargetResult   w38
+// Column 6		
+	Gui, 1:Add, Text, vQty w50  ym+30 x+m
+	Gui, 1:Add, Text, vCurrentResult  w50  //ym+53 x+m
+	Gui, 1:Add, Text, vTargetResult   w50
 
 // Column 7
-	Gui, 1:Add, Text, ym+25 vEntryStatus
+	Gui, 1:Add, Text, ym+25 x+m vEntryStatus
 	Gui, 1:Add, Text, vStopStatus	
 	Gui, 1:Add, Text, vTargetStatus
 		
@@ -92,6 +103,7 @@ createGUI(){
 	setDefaultEntryOrderType()
 	initalizeListViewVars()
 	setDefaultFocus()
+	markTradeButtons()
 
 	return
 }
@@ -100,7 +112,7 @@ createGUI(){
 */
 openLinkOrdersGUI(){	
 	
-	global listViewFields, LinkOrdersSelectedDirection, LinkedScripText, ScripList
+	global listViewFields, LinkOrdersSelectedDirection, LinkedScripText, ScripList, LinkInitialStopPrice
 	
 	LinkedScripText := ""
 	
@@ -113,7 +125,10 @@ openLinkOrdersGUI(){
 	
 	Gui, 2:Add, Radio, vLinkOrdersSelectedDirection gonLinkOrdersDirectionSelect Checked, Long
 	Gui, 2:Add, Radio, gonLinkOrdersDirectionSelect xp+60 yp, Short
+	Gui, 2:Add, Text, x+10, Select Scrip
 	Gui, 2:Add, DropDownList, vLinkedScripText x+15 w100, %ScripList%
+	Gui, 2:Add, Text,x+10, Initial Stop Price 
+	Gui, 2:Add, Edit, vLinkInitialStopPrice x+10 w55
 
 	// Column 2
 
@@ -161,10 +176,10 @@ onLinkOrdersDirectionSelect(){
 	LV_Delete()											// Delete All Rows
 	Loop, % orderbookObj.OpenOrders.size {				// Open Stop and target
 		o :=  orderbookObj.OpenOrders[A_Index]
-		if( o.orderType == controlObj.ORDER_TYPE_SL_MARKET && o.buySell == stopDirection)
-			addOrderRow( o, "Stop" )
+		if( (o.orderType == controlObj.ORDER_TYPE_SL_MARKET || o.orderType == controlObj.ORDER_TYPE_SL_LIMIT)  && o.buySell == stopDirection)
+			addOrderRow( o, "Stop" )					// filter: Open + SL/SLM + stop direction
 		if( o.orderType == controlObj.ORDER_TYPE_LIMIT && o.buySell == stopDirection)
-			addOrderRow( o, "Target" )					// // filter: Open + SLM + stop direction
+			addOrderRow( o, "Target" )					
 	}
 	Loop, % orderbookObj.CompletedOrders.size {			// Completed targets
 		o :=  orderbookObj.CompletedOrders[A_Index]
@@ -220,31 +235,47 @@ updateCurrentResult(){
 	CurrentResult := Direction == "B" ? StopPrice-EntryPrice : EntryPrice-StopPrice
 	TargetResult  := TargetPrice == 0 ? "" : (Direction == "B" ? TargetPrice-EntryPrice : EntryPrice-TargetPrice)
 	
-	GuiControl, 1:Text, CurrentResult, %CurrentResult%	
-	GuiControl, 1:Text, TargetResult,  %TargetResult%	
+	if( InitialStopDistance > 0 ){
+		CurrentResult := CurrentResult/InitialStopDistance
+		TargetResult  := TargetResult/InitialStopDistance
+	}
+	
+	GuiControl, 1:Text, CurrentResult, % Format( "{1:0.1f}X", CurrentResult )
+	GuiControl, 1:Text, TargetResult,  % Format( "{1:0.1f}X", TargetResult ) . " (" . TargetQty . ")"
 }
 
-/* Sets Stop price using default Stop size 
+/* Moves stop to breakeven
 */
-setDefaultStop(){
-	global
-		
-	Gui, 1:Submit, NoHide			
-	StopPrice :=  Direction == "B" ? EntryPrice-DefaultStopSize : EntryPrice+DefaultStopSize		
-	GuiControl, 1:Text, StopPrice, %StopPrice%
+setBreakevenStop(){
+	global StopPrice, InitialEntry, contextObj
 	
+	if( contextObj.getCurrentTrade().positionSize <= 0  )
+		return
+	
+	Gui, 1:Submit, NoHide			
+	StopPrice :=  InitialEntry
+	GuiControl, 1:Text, StopPrice, %StopPrice%
+
 	updateCurrentResult()
 }
 
-/* Sets Target price using default Target size 
+/*
+	Set Target Price to 1X from initial Entry Price
 */
-setDefaultTarget(){
-	global
-		
-	Gui, 1:Submit, NoHide			
-	TargetPrice :=  Direction == "B" ? EntryPrice+DefaultTargetSize : EntryPrice-DefaultTargetSize		
-	GuiControl, 1:Text, TargetPrice, %TargetPrice%
+resetTarget1X(){
+	global TargetPrice, InitialEntry
 	
+	setTargetPrice( InitialEntry )
+	increaseTarget1X()	
+}
+
+/* Add 1X to Target price
+*/
+increaseTarget1X(){
+	global InitialStopDistance, TargetPrice, Direction
+
+	Gui, 1:Submit, NoHide
+	setTargetPrice( Direction == "B" ? TargetPrice+InitialStopDistance : TargetPrice-InitialStopDistance )
 	updateCurrentResult()
 }
 
@@ -256,9 +287,11 @@ setDefaultTarget(){
 /*	Update status bar, GUI controls state and Timer state based on order status
 */
 updateStatus(){
-	global contextObj, orderbookObj, EntryPrice, StopPrice
+	global contextObj, orderbookObj, EntryPrice, StopPrice, isTimerActive
 	
 	trade 			  := contextObj.getCurrentTrade()
+		
+	orderbookObj.read()
 	trade.reload()
 	
 	entryOrderDetails := trade.newEntryOrder.getOrderDetails()
@@ -290,9 +323,6 @@ updateStatus(){
 	GuiControl, % entryOpen    || stopOpen  ? "1:Show"  : "1:Hide", BtnUpdate		// Show Update only if atleast one linked order is open
 	GuiControl, % entryOpen   			    ? "1:Show"  : "1:Hide", BtnCancel		// Show Cancel Button if Entry Order is linked and open	
 	GuiControl, % isEntered && !entryLinked ? "1:Show"  : "1:Hide", BtnAdd			// Show Add if already have a position and dont have add entry order linked
-	
-	GuiControl, % !entryLinked || entryOpen ? "1:Enable"  : "1:Disable", EntryPrice	// Enable Price entry for new orders or for linked open orders
-	GuiControl, % !stopLinked  || stopOpen  ? "1:Enable"  : "1:Disable", StopPrice
 
 	status := ""
 	if( entryLinked ){																// Set Status if Linked
@@ -328,12 +358,12 @@ updateStatus(){
 		}
 	}
 	setOrderStatus( "TargetStatus", status )
-	
-	isTimerActive := (entryLinked || stopLinked) && ! (isEntryClosed && isStopClosed) 		// If order linked, start tracking orderbook. But stop if both closed
-	isTimerActive := isTimerActive ?  toggleStatusTracker( "on" ) : toggleStatusTracker( "off" )	
-	timeStatus    := isTimerActive ? "ON" : "OFF"
+		
+	timeStatus := isTimerActive ? "ON" : "OFF"
 			
 	SB_SetText( "Timer: " . timeStatus . "  Open Position: " . positionSize . ". Unfilled: " . openSize )
+
+	markTradeButtons()
 
 	Gui, 1:Show, AutoSize NA
 }
@@ -348,7 +378,7 @@ setOrderStatus(  statusGuiId, status  ){
 	}
 	
 	length := StrLen(status)
-	width  := length <= 12 ? "w50" : ( length <= 20 ? "w75" : "w125")
+	width  := length <= 12 ? "w75" : ( length <= 20 ? "w100" : "w150")
 	
 	GuiControl, 1:Text, %statusGuiId%, % status
 	GuiControl, 1:Move, %statusGuiId%, % width		
@@ -358,7 +388,7 @@ setOrderStatus(  statusGuiId, status  ){
 	Used when linking to existing orders
 */
 loadTradeInputToGui(){
-	global contextObj
+	global contextObj, InitialStopDistance, InitialEntry
 
 	trade  		:= contextObj.getCurrentTrade()
 	scripAlias	:= trade.scrip.alias
@@ -367,32 +397,50 @@ loadTradeInputToGui(){
 	stop  		:= trade.stopOrder
 	target	    := trade.target
 
+	InitialStopDistance	 := trade.InitialStopDistance
+	InitialEntry 		 := trade.InitialEntry
+
 	setSelectedScrip( scripAlias )
 	setGUIValues( entryInput.qty, entry.getPrice(), stop.getPrice(), target.getPrice(),  target.getGUIQty(), entryInput.direction, entryInput.orderType  )
 	updateCurrentResult()
 }
 
 setGUIValues( inQty, inEntry, inStop, inTargetPrice, inTargetQty, inDirection, inEntryOrderType  ){
-	
-	setQty( inQty )
+
 	setEntryPrice( inEntry, inEntry )
 	setStopPrice( inStop, inStop )
 	setDirection( inDirection )	
 	selectEntryOrderType( inEntryOrderType )
 	setTargetPrice( inTargetPrice )
+	
+	setQty( inQty )
 	setTargetQty(inTargetQty)
 	
 	updateStatus()	
 }
 
+isScripChangeBlocked( alias ){
+	global SelectedScripText, contextObj
+	trade 		 := contextObj.getCurrentTrade()
+	orderCreated := trade.isEntryOpen() || trade.isEntryOrderExecuted()
+	
+	return (orderCreated && SelectedScripText != alias ) 								// Dont change scrip if Entry Order has already been created
+}
+
+/* select scrip and clear out data
+*/
 setSelectedScrip( alias ){
-	global SelectedScripText	
+	global SelectedScripText
 	
 	oldScrip		  := SelectedScripText
 	SelectedScripText := alias
 	GuiControl, 1:ChooseString, SelectedScripText,  %SelectedScripText%
 	
 	Gui, 1:Submit, NoHide
+		
+	if( alias != SelectedScripText ){
+		MsgBox, Setting Scrip in DropDownList failed
+	}
 	
 	if( alias !=""  &&  oldScrip!=SelectedScripText  ){
 		loadScripSettings()																// onScripChange() is not called by above even though dropdown is changed. So load manually
@@ -406,20 +454,75 @@ setPriceStatus( inPrice ){
 }
 
 setQty( inQty ){
-	global Qty
-	Qty := inQty
-	GuiControl, 1:Text, Qty,  %Qty%
+	global Qty, EntryRiskPerc,  EntryPrice, StopPrice
+	
+	Qty	:= inQty	
+	
+	riskPerTrade := UtilClass.getRiskPerTrade()
+	fullQty		 := riskPerTrade /  Abs(EntryPrice - StopPrice) 
+	
+	EntryRiskPerc := ceil(Qty/fullQty * 100)				// % of target risk per trade, ceil so that OnEntrySizeChange() sets Qty correctly using floor
+	
+	GuiControl, 1:Text, EntryRiskPerc,  %EntryRiskPerc%
+	//GuiControl, 1:Text, Qty,  %Qty%						// 	EntryRiskPerc triggers OnEntrySizeChange() which updates GUI
 }
 
+/* Set Entry size for a new order
+   Also set Target at 1X
+*/
+setTradeRisk(){
+	global InitialStopDistance, InitialEntry, contextObj, EntryPrice, StopPrice, DefaultTargetSize, isButtonTrigger
+	
+	trade        := contextObj.getCurrentTrade()
+	positionSize := trade.positionSize
+	
+	if( !isButtonTrigger && positionSize <= 0 && EntryPrice > 0 && StopPrice > 0  ) {			// Only set before Initial Entry
+		
+		InitialEntry 		:= EntryPrice
+		InitialStopDistance	:= Abs( EntryPrice - StopPrice )
+		riskPerTrade		:= UtilClass.getRiskPerTrade()
+		tradeQty	   		:= Floor( riskPerTrade / InitialStopDistance )
+	
+		setQty(tradeQty)
+		setTargetAtRiskMultiple( 1 )
+		setTargetQty( ceil(tradeQty * DefaultTargetSize/100) )
+		trade.saveInitialStopDistance( InitialStopDistance, InitialEntry )  					// bandaid code for now
+	}
+}
+
+/*
+  Set Target at 1X/2X etc
+*/
+setTargetAtRiskMultiple( RiskMultiple ){
+	global  Direction, InitialEntry, InitialStopDistance
+
+	if( Direction == "B" )
+		target := InitialEntry + InitialStopDistance * RiskMultiple
+	else if( Direction == "S" )
+		target := InitialEntry - InitialStopDistance * RiskMultiple
+	
+	setTargetPrice(target)
+}
+
+/*
+  Sets input Qty and updates TargetPerc
+*/
 setTargetQty( inQty ){
-	global TargetQty
-	TargetQty := inQty
-	GuiControl, 1:Text, TargetQty,  %TargetQty%
-}
-
-setDefaultQty(){
-	global DefaultQty
-	setQty( DefaultQty )
+	global contextObj, TargetQty, TargetQtyPerc, Qty
+	
+	trade			:= contextObj.getCurrentTrade()
+	
+	positionSize	:= trade.positionSize
+	openSize		:= trade.isEntryOpen() ? trade.newEntryOrder.getTotalQty() : 0
+	totalSize		:= openSize + positionSize
+	
+	if( totalSize == 0 )
+		totalSize := Qty																		// Initially allow setting based on Qty so that we can set default targets
+	
+	TargetQty  		:= inQty
+	TargetQtyPerc   := Floor(TargetQty/totalSize*100)											// Displayed Target qty is fraction of Total filled and unfilled entry orders
+	
+	GuiControl, 1:Text, TargetQtyPerc,  %TargetQtyPerc%
 }
 
 /* EntryPriceActual should contain the original values taken from AB
@@ -430,6 +533,8 @@ setEntryPrice( inEntry, inEntryPriceActual){
 	EntryPrice 		 := inEntry
 	EntryPriceActual := inEntryPriceActual
 	GuiControl, 1:Text, EntryPrice,  %EntryPrice%
+	
+	setTradeRisk()
 }
 
 /* StopPriceActual should contain the original values taken from AB
@@ -440,6 +545,8 @@ setStopPrice( inStop, inStopPriceActual ){
 	StopPrice 		:= inStop
 	StopPriceActual := inStopPriceActual
 	GuiControl, 1:Text, StopPrice, %StopPrice%
+	
+	setTradeRisk()
 }
 
 setTargetPrice( inTarget ){
@@ -475,6 +582,31 @@ setDefaultFocus(){
 	ControlFocus, Edit2, OrderMan, Entry											// Set Focus on Entry Price
 }
 
+/* Mark Trades with position
+*/
+markTradeButtons(){	
+	markTrade(1)
+	markTrade(2)
+	markTrade(3)
+}
+
+markTrade( index ){
+	global contextObj, Button1, Button2, Button3
+	
+	trade		 := contextObj.getTradeAt( index)	
+	currentIndex := contextObj.getCurrentIndex()
+	appendString := ""
+	
+	if( currentIndex == index  )			// Selected Trade
+		appendString :=  "*"
+	else if( trade.positionSize >0 )		// Has Open Position
+		appendString :=  "$"
+	else if( trade.isEntryOpen() )			// Has open but not filled order
+		appendString :=  "^"
+
+	GuiControl, 1:Text, Button%index%, % index . appendString
+}
+
 // -- GUI Helpers --- 
 
 /* Map order status to short code for GUI
@@ -501,7 +633,7 @@ getOrderShortStatus( status ){
 initalizeListViewVars(){
 	global
 	
-	listViewFields 	   	         := "Type|Scrip|Status|OrderType|Buy/Sell|Qty|PendingQty|Price|Trigger|Average|Order No|Time"
+	listViewFields 	   	         := "Type|Scrip|Status|OrderType|Buy/Sell|Qty|TradedQty|Price|Trigger|Average|Order No|Time"
 	listViewOrderIDPosition   	 := 11
 	listViewOrderStatusPosition  := 3
 	listViewOrderTypePosition	 := 4
@@ -511,7 +643,7 @@ initalizeListViewVars(){
 */
 addOrderRow( o, type ) {
 	if( IsObject(o) )
-		LV_Add("", type, o.tradingSymbol, o.status, o.orderType, o.buySell, o.totalQty, o.pendingQty, o.price, o.triggerPrice, o.averagePrice, o.nowOrderNo, o.nowUpdateTime )
+		LV_Add("", type, o.tradingSymbol, o.status, o.orderType, o.buySell, o.totalQty, o.tradedQty, o.price, o.triggerPrice, o.averagePrice, o.nowOrderNo, o.nowUpdateTime )
 }
 
 

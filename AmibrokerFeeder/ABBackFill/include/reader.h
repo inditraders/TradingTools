@@ -35,14 +35,18 @@ private:
 
     bool preProcess( const std::string &input_file  );
     void postParse(  const std::string &ticker, const std::string &date, const std::string &time, const std::string &open,
-                     const std::string &high,   const std::string &low,  const std::string &close,      std::string &volume );
+                     const std::string &high,   const std::string &low,  const std::string &close,      std::string &volume );															
+															
+	std::string getOutputLine(  const std::string &ticker, const std::string &date, const std::string &time, const std::string &open,		
+								const std::string &high,   const std::string &low,  const std::string &close,      std::string &volume );
     
 	void writeTickModeData();								// Writes Backfill data to csv in sorted order used only with $TICKMODE 1
 	void writeRTDTicks();									// Add tick data with timestamp greater than Backfill data's last minute
 
     void changeHHFrom12To24( std::string &time ); 
-    bool isIntraday        ( const std::string &time, const std::string &date = "" );
-    
+    bool isMarketHours     ( const std::string &time );
+	bool isToday		   ( const std::string &date = "" );
+
 };
 
 #endif

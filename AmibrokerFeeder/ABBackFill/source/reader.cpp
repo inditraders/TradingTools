@@ -159,21 +159,63 @@ bool Reader::parseDataTableToCsv( ){
 void  Reader::postParse( const std::string &ticker, const std::string &date, const std::string &time,  const std::string &open,
                          const std::string &high,   const std::string &low,  const std::string &close,       std::string &volume ){
                                  
-    if( settings.is_intraday_mode && ! isIntraday(time, date)  )                                // Skip outside trading hours for intraday mode
+    if( settings.is_filter_time && ! isMarketHours(time)  )										// Skip outside trading hours if configured
         return;
     
+	if( settings.is_singleday_mode && !isToday(date)  )
+		return;
+	
+
+
     // $FORMAT Ticker, Date_YMD, Time, Open, High, Low, Close, Volume
-    std::string output_line = ticker + ',' + date + ',' + time + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+	// Save 15:30:00 as 15:29:59 to avoid extra bar in AB
+    //std::string output_line = ticker + ',' + date + ',' + (time==settings.close_minute ? Util::subSecond(time) : time  ) + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+
+	std::string output_line = getOutputLine(ticker, date, time, open, high, low, close, volume); 
 
     if( settings.is_no_tick_mode ){                                                            // Send in sorted ascending order for tickmode for each ticker
 		fout << output_line  << std::endl ;
     }
     else {
-        sorted_data[ticker+time]  = output_line;
+        sorted_data[date+ticker+time]  = output_line;
 
-		if( time > scrip_end_time[ticker] )													  // Save latest quote's timestamp for each Scrip. We need to send all ticks after this from RTDMan
+		if(date == today_date && time > scrip_end_time[ticker] )							   // Save Today's latest quote's timestamp for each Scrip. We need to send all ticks after this from RTDMan
 			scrip_end_time[ticker] = time;
     }
+}
+
+/* Print output string for quote.
+   Move last last few ticks outside market hours to within market hours. They contain the final close price
+*/
+std::string Reader::getOutputLine( const std::string &ticker, const std::string &date, const std::string &time,  const std::string &open,
+						   		   const std::string &high,   const std::string &low,  const std::string &close,       std::string &volume ){
+
+	std::string output_line;
+
+	// Hardcoding some substitutions for now to get close price 	
+	
+	if( time == "15:30:00" ){
+		if( volume == "0" )
+			output_line = ticker + ',' + date + ',' + "15:29:57" + ',' + close + ',' + close + ',' + close + ','  + close  + ',' + volume; 
+		else
+			output_line = ticker + ',' + date + ',' + "15:29:57" + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+	}
+	else if( time == "15:31:00" ){
+		if( volume == "0" )
+			output_line = ticker + ',' + date + ',' + "15:29:58" + ',' + close + ',' + close + ',' + close + ','  + close  + ',' + volume; 
+		else
+			output_line = ticker + ',' + date + ',' + "15:29:58" + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+	}
+	else if( time == "15:32:00" ){
+		if( volume == "0" )
+			output_line = ticker + ',' + date + ',' + "15:29:59" + ',' + close + ',' + close + ',' + close + ','  + close  + ',' + volume; 
+		else
+			output_line = ticker + ',' + date + ',' + "15:29:59" + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+	}   
+	else{
+		output_line = ticker + ',' + date + ',' + time + ',' + open + ',' + high + ',' + low + ','  + close  + ',' + volume; 
+	}
+	return output_line;
 }
 
 // Write out data in sorted_data. Only used with $tickmode 1
@@ -199,7 +241,7 @@ void Reader::writeTickModeData(){
 */
 void Reader::writeRTDTicks(){
 
-	if( ! isIntraday(Util::getTime()) ){										// RTD Ticks only needed during market hours. After EOD, only use VWAP/DT data
+	if( ! isMarketHours(Util::getTime()) ){										// RTD Ticks only needed during market hours. After EOD, only use VWAP/DT data
 		scrip_end_time.clear();
 		return;
 	}
@@ -292,14 +334,18 @@ void Reader::changeHHFrom12To24( std::string &time ){                          /
     } 
 } 
 
-bool Reader::isIntraday( const std::string &time, const std::string &date ){    
-    if( date != "" && date != today_date){                                  // 1. date should be today if not empty
-        return false;
-    }                                                                                
-    if( time < settings.open_minute  || time > settings.close_minute ){     // 2. Time H::M should be within 
+bool Reader::isMarketHours( const std::string &time ){        
+    if( time < settings.open_minute  || time > settings.close_minute ){     // Time H::M should be within open - close
         return false;                                                       // This works as time is in lexicographical order with leading 0
     }
     return true;
+}
+
+bool Reader::isToday( const std::string &date ){
+	if( date != "" && date != today_date){
+        return false;
+    }
+	return true;
 }
 
 

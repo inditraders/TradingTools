@@ -31,9 +31,20 @@ loadSettings(){
 	IniRead, DTBackfillFileName,     BackfillMan.ini, BackfillMan, DTBackfillFileName
 	IniRead, VWAPBackfillFileName,   BackfillMan.ini, BackfillMan, VWAPBackfillFileName
 	IniRead, EODBackfillTriggerTime, BackfillMan.ini, BackfillMan, EODBackfillTriggerTime
-	IniRead, HKBackfill, 			 BackfillMan.ini, BackfillMan, HKBackfill
-	IniRead, HKFlattenTL, 			 BackfillMan.ini, BackfillMan, HKFlattenTL
 	
+	IniRead, HKBackfill, 			 BackfillMan.ini, BackfillMan, HKBackfill
+	IniRead, HKBackfillAll,			 BackfillMan.ini, BackfillMan, HKBackfillAll
+	IniRead, HKFlattenTL, 			 BackfillMan.ini, BackfillMan, HKFlattenTL
+	IniRead, HKSetLayer, 			 BackfillMan.ini, BackfillMan, HKSetLayer
+	IniRead, HKDelStudies, 		 	 BackfillMan.ini, BackfillMan, HKDelStudies
+	
+	IniRead, ABActiveWatchListPath,  BackfillMan.ini, BackfillMan, ABActiveWatchListPath
+	IniRead, RTDManPath,  			 BackfillMan.ini, BackfillMan, RTDManPath
+	
+	
+	IniRead, Server, BackfillMan.ini, BackfillMan, Server
+    isServerNOW := (Server == "Now")
+
 	IniRead, value, BackfillMan.ini, BackfillMan, PingerPeriod	
 	PingerPeriod  :=  value * 60 * 1000										// Mins to ms	
 
@@ -49,7 +60,7 @@ loadSettings(){
 	END_HOUR	:= split[1]
 	END_MIN		:= split[2]
 
-	VWAPCount = 0
+	VWAPCount := 0
 	Loop{	
 		IniRead, value, BackfillMan.ini, BackfillMan, VWAP%A_Index%
 		if value = ERROR 
@@ -58,7 +69,7 @@ loadSettings(){
 		VWAPCount 	   :=  A_Index
 	}
 
-	DTCount = 0
+	DTCount := 0
 	Loop{	
 		IniRead, value, BackfillMan.ini, BackfillMan, DataTable%A_Index%
 		if value = ERROR 
@@ -67,7 +78,7 @@ loadSettings(){
 		DTCount 	 :=  A_Index
 	}
 
-	IndexCount = 0
+	IndexCount := 0
 	Loop{	
 		IniRead, value, BackfillMan.ini, BackfillMan, Index%A_Index%
 		if value = ERROR 

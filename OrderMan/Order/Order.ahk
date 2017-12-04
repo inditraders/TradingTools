@@ -94,14 +94,14 @@ class OrderClass{
 	}
 
 	getFilledQty(){
-		return this._orderDetails.totalQty - this.getOpenQty()
+		return this._orderDetails.tradedQty
 	}
 	
 	getOpenQty(){
-		pendingQty := this._orderDetails.pendingQty
-		if( pendingQty == "" )
-			pendingQty := 0 
-		return pendingQty
+		return this._orderDetails.totalQty - this.getFilledQty()
+	}
+	getTotalQty(){
+		return this._orderDetails.totalQty
 	}
 
 	getGUIDirection(){
@@ -392,6 +392,16 @@ class OrderClass{
 		
 		if( AutoSubmit ){		
 			ControlClick, % controlObj.ORDER_ENTRY_SUBMIT, %winTitle%,,,, NA								// Submit Order
+			
+			Sleep, 100
+			IfWinExist, % controlObj.ORDER_ENTRY_CONFIRMATION_TITLE											// Zt - confirm and close order
+			{
+				ControlClick, % controlObj.ORDER_ENTRY_SUBMIT, % controlObj.ORDER_ENTRY_CONFIRMATION_TITLE,,,, NA	 
+				WinWait,  % controlObj.ORDER_ENTRY_SUBMITTED_TITLE,,2
+				WinClose, % controlObj.ORDER_ENTRY_SUBMITTED_TITLE
+				WinWaitClose, % controlObj.ORDER_ENTRY_SUBMITTED_TITLE, 2	
+			}
+			
 			WinWaitClose, %winTitle%, 2																		// Wait for order window to close. If password needed, notify
 			IfWinExist, % controlObj.ORDER_ENTRY_TITLE_TRANSACTION_PASSWORD
 				MsgBox, 262144,, Enter Transaction password in NOW and then click ok
@@ -400,7 +410,7 @@ class OrderClass{
 		WinWaitClose, %winTitle%
 	}
 
-	/*	Wait for order to be validated - wait if status is validation pending or put order req recieved
+	/*	Wait for order to be validated - wait if status is 'validation pending', 'open pending' or 'put order req recieved'
 	*/
 	_waitforOrderValidation(){
 		global orderbookObj, OPEN_ORDER_WAIT_TIME, controlObj
@@ -409,7 +419,7 @@ class OrderClass{
 			
 			status := this._orderDetails.status
 
-			if( status == controlObj.ORDER_STATUS_PUT || status == controlObj.ORDER_STATUS_VP ){
+			if( status == controlObj.ORDER_STATUS_PUT || status == controlObj.ORDER_STATUS_VP ||  status == controlObj.ORDER_STATUS_OPEN_PENDING ){
 				Sleep, 250
 				orderbookObj.read()
 				this.reloadDetails()

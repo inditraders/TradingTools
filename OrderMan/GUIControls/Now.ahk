@@ -62,14 +62,15 @@ class NowControlsClass{
 	static ORDER_BOOK_DISPLAY			  			:= "Button6"									// "Display all Orders" Checkbox in Orderbook
 	static ORDER_BOOK_MENU			  				:= "Orders and Trades,Order Book"				// Takes 2 comma separated values
 																									// Column Header Text - Array order must match with OrderbookClass::_readColumnHeaders()
-	static ORDER_BOOK_OPEN_HEADERS_TEXT				:= ["Order Type", "Buy/Sell", "Trading Symbol", "Total Qty", "Pending Qty", "Price", "TriggerPrice", "Average Price", "Status", "NOWOrderNo", "NOW UpdateTime"]
-	static ORDER_BOOK_COMPLETED_HEADERS_TEXT		:= ["Order Type", "Buy/Sell", "Trading Symbol", "Total Qty", "Price", "TriggerPrice", "Average Price", "Status", "NOWOrderNo", "NOW UpdateTime", "Rejection Reason"]
+	static ORDER_BOOK_OPEN_HEADERS_TEXT				:= ["Order Type", "Buy/Sell", "Trading Symbol", "Total Qty", "Traded Qty", "Price", "TriggerPrice", "Average Price", "Status", "NOWOrderNo", "NOW UpdateTime"]
+	static ORDER_BOOK_COMPLETED_HEADERS_TEXT		:= ["Order Type", "Buy/Sell", "Trading Symbol", "Total Qty", "Traded Qty", "Price", "TriggerPrice", "Average Price", "Status", "NOWOrderNo", "NOW UpdateTime", "Rejection Reason"]
 	
 // OrderBook -> Order status column
 	static ORDER_STATUS_PUT			  				:= "put order req received"
 	static ORDER_STATUS_VP				  			:= "validation pending"
 	static ORDER_STATUS_OPEN	  		  			:= "open"
 	static ORDER_STATUS_TRIGGER_PENDING  			:= "trigger pending"
+	static ORDER_STATUS_OPEN_PENDING				:= "open pending"
 	static ORDER_STATUS_COMPLETE 		  			:= "complete"
 	static ORDER_STATUS_REJECTED		  			:= "rejected"
 	static ORDER_STATUS_CANCELLED		  			:= "cancelled"
@@ -77,4 +78,9 @@ class NowControlsClass{
 // OrderBook -> Buy/Sell Column
 	static ORDER_DIRECTION_BUY    					:= "BUY"
 	static ORDER_DIRECTION_SELL  					:= "SELL"
+	
+// ZT specific
+	static ORDER_ENTRY_CONFIRMATION_TITLE			:= "NA 99999"
+	static ORDER_ENTRY_SUBMITTED_TITLE				:= "NA 99999"
+
 }

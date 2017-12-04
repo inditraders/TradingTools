@@ -1,52 +1,5 @@
 
-test
-    Average Price - Adds + Link with adds
-    Reset default ordertype after unlink/cancel
-TEST
-    OrderLink
-        - Sets SLM order as Limit since its LIMIT after trigger
-        - If Trigger Price != 0
-            If Price = 0 set SLM else SLL
-        - Test Manual / Auto link 
-            - getGUIOrderType()
-            - Auto Link Also sets Entry price as 0
-            - Entry filled then link
-Bugs
-    SASOnline - NFO Select error - click ok after submit
-        Window title : NEST - GJ109
-        Window text: "Exchange or Series or Symbol is not selected"
-        Buttonid (ok) "Button1"
-
-
-
-
-Rename DefaultStopSize/DefaultTargetSize to DefaultStopDistance/DefaultTargetDistance
-Default target size
-Allow Target Trailing - say checkbox
-
-1 Click Market Buy/Sell
-    Market Order
-        - After entry, set average price in Entry box
-    Allow Empty Stop price
-        - After Entry use default stop size from average size if Stop is not set
-
-Bug 
-    Target Triggered - Timer off, New/link button visible - unlinked?
-        Stop size reduced fine and on reopen also linked fine with TIMER on
-        debug - check trackerCallback, updateStatus() , trade/gui unlink
-    Another time stop size not increased after add triggered
-        - Maybe both issues are caused by old data in Orderbook - Try to refresh orderbook after callback trigger
-        - So call orderbook.refreshOrderBook() and then trade.reload()
-    For now - Just add logs to confirm issue, didnt face again
-
-
-
-
-
-
-
-    
-    
+Save to log csv after trade closed - Will need to input actual expense later - Add some interface for it too
 
 
 
@@ -90,6 +43,29 @@ Bug
 
 
 
+
+
+
+
+
+
+
+	
+
+Target Orders - Allow stop orders for partial exit
+OM - 1 click FT B/S
+    - Use H/L as stop and LTP as limit entry + some slippage
+    - Take H/L and LTP from Marketwatch + take current symbol from AB
+Bug
+    - Update Target sometimes updates stop instead with bad qty    
+    - trackerCallback() -> this.target.isPartiallyFilled()  commented        
+        update flow conflicts with tracker thread ? 
+GUI calls from trade with GUI in different context can overwrite current context
+    // Look if any calls left
+    // for all, check how loadTradeToContext() loads data 
+Order - Verify all fields after setting and before submit
+    Maybe also verify after order creation
+Current Status (Partial/Stop X) after Add ? What should it show ? 
 
 
 
@@ -98,84 +74,69 @@ Bug
 
 
 -----------------------------------------------------------------------------------------
-Separate class for Entry, Stop Orders similar to Target
-Multiple Orders
-    - Buttons for each trade to switch quickly 
-        - white if no trade, yellow for open trade, green if positionsize>0   +   indicate current trade
-    - Context change
-        - Keep array of trades + current context 
-        - 1) Load trade from context 2) Settings::loadScrip 3) Refresh gui - loadTradeInputToGui()    
-        - open scrips warning message - Dont warn
-    - call trackerCallback() for each trade
-        - Trade.reload() - Move orderbookObj.read(). Should be called only once here
-    - Notify on Execution - through button color
-Partial Stops
-    Ex - Add Order Stop
-        - Option to keep seperate
-        - Merge when Normal stop moves past add stop
-    Ex - Trail partial aggresively after spike
------------------------------------------------------------------------------------------
-Verify Values in Buy/Sell Order window 
-    Can help if settings are incorrect else can end up with wrong scrip
-If order not found 
-    test with market order
-    prompt list of orders
-Square Off 
-    - Market Stop order for filled position + cancel rest
-        1) Update stop order Order Type in Entry structure
-            - Set order type as market order
-            - Dont update Order yet - (2) should do it
-        2) Cancel open Entry order ( Add )
-            This will also change stop qty to filled size
------------------------------------------------------------------------------------------
-Position Status 
-    - Current Risk based on Stop price, avg price
-    - Show this besides stop and target after Entry Executed
-Add Current Price validations
-    - check current price and warn if posible bad order based on ordertype
-    - Example - Limit Buy above price, % diff between Entry price and current price
-Price Alerts
-    save/load window position
-    Pick Price from AB
-        Separate shortcut for long and shorts - pick price + scrip
-        If within some distance of previous value - erase old value
-        Reload price triggers    
-    GUI - Remove / View alerts
-    Detect if multiple prices trigged - on trigger check for next price and remove all together
-    Audio Alert
------------------------------------------------------------------------------------------
-Bugs
-    - Cancel order - in between - gives error. Detect and check again
-        ---------------------------
-        NOW
-        ---------------------------
-        Please Select Order To Cancel
-Icons in buttons
-    Repace button with Picture
-    https://autohotkey.com/board/topic/80584-how-to-simulate-a-graphical-button-in-a-gui/
-Export Trade Execution Log
-    In trackerCallback() before unlink
-    Or In Order create / update
-Partial Entry Fill - Handle Stop       // workaround - use SLM
-    - Show filled size for Entry/Stop
-    - Maybe Stop order only entered once filled and stop size modified if Entry Size increases
-        - But should always have protective stop for limit orders ( and so also for SL-Limit orders once triggered ) 
-    - Even for Limit Entry orders, partial fill affects trailing stop orders
-    - Modify Stop Size = Filled size when Trailing 
-    - Unfilled -> Need to have seperate protective stop behind Limit price for unfilled orders once order is a LIMIT order 
-            ( Limit / SL-Limit after trigger)
-        Should be cancelled once size = 0, ie Filled completely
-        option to cancel both - remaining qty 
-        Trailing Stop size should be always = Filled Size
-        Need to differentiate between original stop and Trailing stop ( only when order is unfilled)
-            Orignial Stop for unfilled size cannot be moved beyond Entry price
-    - Handle cancel orders
-Option to change order type for open order
-    - SL Order After Trigger - changes to Limit Order - should be editable ( unfilled )
-    - Square Off - Market Stop order only if entry is complete - else cancel    // show cancel if not entered else squareoff 
------------------------------------------------------------------------------------------
-Swing Trades 
-    - Can support for Derivatives through admin position
-Qty in terms of multiple size instead of actual qty
-Constant Risk position sizing + Allow Risk %
------------------------------------------------------------------------------------------
+AB + IB 
+    - commit to different git project
+    - AB has IBcontroller integrated. 
+        - Can call IB through its simple interface including bracket orders
+        - partial target
+            - Bracket order & OCO does not directly support it
+            - Can add multiple stop orders with target-bracketed and standalone parts but it will increase brokerage
+            - Workaround is to use **scale entry** for Target order
+                - When initial part gets filled, stop size reduces accordingly
+                - If no target active then keep the pending Target size far away
+                - For T2, Modify existing target order
+                    - Set starting price as Target 2 price
+                    - Set large increment again for dummy target (trailing position)
+                    - set Initial  component size = T1(filled) + T2
+                    - set Subsequent Component size to Total size - Initial Component size
+                - Do not cancel Target order as it has OCA with Stop order and could not delete OCA group from gui
+            - Also check Presets in File > Global configuration
+            - api seems to be there but maybe not in AB IB Controller
+                https://interactivebrokers.github.io/tws-api/classIBApi_1_1Order.html#gsc.tab=0
+            - IB controller is open source
+                http://www.amibroker.com/devlog/2013/06/03/ibcontroller-1-3-8-source-codes-released/
+        - Can test with demo acocunt / paper account
+        - Integrate with AB price pickup afl 
+            - Add some gui to show prices and to change manually as before        
+            - 1 click orders for FT using HOD/LOD as stop and LTP as entry price 
+    - AB afl to draw order lines via gfx + link with OM
+    - 1 click orders for FT using HOD/LOD as stop + separate default FT target order size    
+    - Draw lines via gfx for buy/sell and trigger into IB calls
+        - Have some handle area over line and mouse even to capture price update
+            See http://www.amibroker.org/userkb/category/afl-programming/gfx-programming/
+            "Moving Low Level Graphics (GFX) Objects on your Charts"
+        - Need to translate gfx x,y to price
+            See http://www.amibroker.org/userkb/category/afl-programming/gfx-programming/
+            Finding Pixel Boundaries : 
+                see Status("pxchartleft") etc. can get width height
+                Status( "lastvisiblebar" )      to get no of bars within the chart
+                Status( "firstvisiblebar" );
+                Status( "axisminy" )            to get price range
+                Status( "axismaxy" )
+            Using a GFX Include file : Price to pixel, inverse it  
+    ---------- 
+    Log to sqlilte Db
+        Save everything in sqlite DB, can be used as Trade log
+        Also use it load orders on restart
+        Maybe through AB plugin, so can directly call from afl
+        Also check how to export trades from IB
+        Replace TradeLog + stats + slippage etc
+            More stats
+                Grimes - page 254, 388
+                Max Drawdown, Highest  win / loss streaks
+                Average drawdown size, hit rate, Sharpe ratio, average daily P/L volatility, etc
+    Logging
+    Handle Multiple trades
+    Current Price vs order Validations  // ex buy stop should be above current price etc
+    Reconcile with contract notes + expenses    
+    check - Import from gmail 
+        can forward contract notes to dummy email address 
+        read from inbox and move to folder
+        save all contract logs
+ -----------------------------------------------------------------------------------------
+
+
+
+
+
+

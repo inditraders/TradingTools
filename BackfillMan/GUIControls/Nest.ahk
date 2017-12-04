@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2016  SpiffSpaceman
+  Copyright (C) 2017  SpiffSpaceman
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -15,12 +15,16 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
 
-class NinjaTraderClass extends AmibrokerClass{
+/* 
+  Overides control ids and Windows Title specific to Nest
+*/
+class NestControlsClass extends NowControlsClass{
 
-//installHotKey
-//getPriceFromAB
-//getPriceFromLine
-//getPriceAtCursorTooltip
-//getScripFromAB
-
+	// Menu to open VWAP
+	static VWAP_MENU := "Market,VWAP Statistics"		// Takes 2 comma separated values
+	
+	static VWAP_HEADER_START_TIME := ""
+	static VWAP_HEADER_END_TIME   := "Time"
+    
+    static DT_INDEX_CHART_ID	  := "Static6"			// Id of a control within chart. Used to open datatable
 }
